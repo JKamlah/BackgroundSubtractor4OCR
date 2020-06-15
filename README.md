@@ -1,0 +1,2 @@
+# BackgroundSubtractor4OCR
+BackgroundSubtractor4OCR
