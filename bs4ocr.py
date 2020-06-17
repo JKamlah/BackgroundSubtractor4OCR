@@ -17,13 +17,16 @@ arg_parser.add_argument("-b", "--blursize", default=59, type=int, help="Kernelsi
 arg_parser.add_argument("-d", "--dilsize", default=5, type= int, help="Kernelsize for dilation")
 arg_parser.add_argument("-s", "--kernelshape", default="ellipse", help="Shape of the kernel for dilation", choices=["cross","ellipse","rect"])
 arg_parser.add_argument("-c", "--contrast", action="store_true", help="Higher contrast (experimental)")
+arg_parser.add_argument("-n", "--bg_normalize", action="store_true", help="Higher contrast (experimental)")
+arg_parser.add_argument("--bg_normalize_min", default=20, type=int, help="Min value for background normalization")
+arg_parser.add_argument("--bg_normalize_max", default=235, type=int, help="Max value for background normalization")
 arg_parser.add_argument("-t", "--textdilation", action="store_false", help="Deactivate extra dilation for text")
 arg_parser.add_argument("-q", "--quality", default=75, help="Compress quality of the image like jpg")
 arg_parser.add_argument("-v", "--verbose", help="show ignored files", action="store_true")
 
 args = arg_parser.parse_args()
 
-def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", textdilation=True, contrast=False, verbose=False):
+def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg_norm=False, bg_norm_min=20, bg_norm_max=235, textdilation=True, contrast=False, verbose=False):
     # Dilsize increasing makes scooping effects,
     # default (img, dilsize=19, blursize=21, contrast=0)
     img = cv2.imread(str(img), -1)
@@ -50,7 +53,11 @@ def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", te
             bg_img = cv2.multiply(bg_img, bg_img, dtype=cv2.CV_32F)
             bg_img = cv2.normalize(bg_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX,
                                    dtype=cv2.CV_8U)
-       
+
+        # Normalize bg to preserve more colorinformation
+        if bg_norm:
+            bg_img = cv2.normalize(bg_img, None, alpha=bg_norm_min, beta=bg_norm_max, norm_type=cv2.NORM_MINMAX,                                    dtype=cv2.CV_8U)
+ 
         # Subtract bg from fg
         diff_img = 255 - cv2.absdiff(plane, bg_img)
 
@@ -70,7 +77,7 @@ def main():
         print(fout)
         if not fout.parent.exists():
             fout.parent.mkdir()
-        bg_sub = background_subtractor(img,dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape, textdilation=args.textdilation, contrast=args.contrast, verbose=args.verbose)
+        bg_sub = background_subtractor(img,dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape, bg_norm=args.bg_normalize, bg_norm_min=args.bg_norm_min, bg_norm_max=args.bg_norm_max, textdilation=args.textdilation, contrast=args.contrast, verbose=args.verbose)
         if args.extension == "jpg":
             cv2.imwrite(str(fout.absolute()), bg_sub, [int(cv2.IMWRITE_JPEG_QUALITY), args.quality])
         else:
