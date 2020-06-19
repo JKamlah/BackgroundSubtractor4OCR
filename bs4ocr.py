@@ -14,6 +14,8 @@ arg_parser.add_argument("-o", "--outputfolder", default="./cleaned", help="filen
 arg_parser.add_argument("-e", "--extension", default="jpg", help="Extension of the img")
 arg_parser.add_argument("--extensionaddon", default=".prep", help="Addon to the fileextension")
 arg_parser.add_argument("-b", "--blursize", default=59, type=int, help="Kernelsize for medianBlur")
+arg_parser.add_argument("-i", "--bluriter", default=1, type=int, help="Iteration of the medianBlur")
+arg_parser.add_argument("-f", "--fixblursize", action="store_true", help="Deactivate decreasing Blurkernelsize")
 arg_parser.add_argument("-d", "--dilsize", default=5, type= int, help="Kernelsize for dilation")
 arg_parser.add_argument("-s", "--kernelshape", default="ellipse", help="Shape of the kernel for dilation", choices=["cross","ellipse","rect"])
 arg_parser.add_argument("-c", "--contrast", action="store_true", help="Higher contrast (experimental)")
@@ -26,12 +28,16 @@ arg_parser.add_argument("-v", "--verbose", help="show ignored files", action="st
 
 args = arg_parser.parse_args()
 
-def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg_norm=False, bg_norm_min=20, bg_norm_max=235, textdilation=True, contrast=False, verbose=False):
+def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg_norm=False, bg_norm_min=20, bg_norm_max=235, bluriter=1, fix_blursize=False, textdilation=True, contrast=False, verbose=False):
     # Dilsize increasing makes scooping effects,
     # default (img, dilsize=19, blursize=21, contrast=0)
     img = cv2.imread(str(img), -1)
     rgb_planes = cv2.split(img)
     result_planes = []
+
+    #Only odd blurkernelsize are valid
+    blursize = blursize+1 if blursize%2 == 0 else blursize
+
     for idx, plane in enumerate(rgb_planes):
         dilated_img = plane
         kshape = {"rect":cv2.MORPH_RECT,"ellipse":cv2.MORPH_ELLIPSE,"cross":cv2.MORPH_CROSS}.get(kernelshape, cv2.MORPH_ELLIPSE)
@@ -41,7 +47,14 @@ def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg
             dilated_img = cv2.dilate(plane, dil_kernel)
         dil_kernel = cv2.getStructuringElement(kshape, (dilsize, dilsize))
         dilated_img = cv2.dilate(dilated_img, dil_kernel)
-        bg_img = cv2.medianBlur(dilated_img, blursize)
+
+        bg_img = dilated_img
+
+        for ksize in np.linspace(blursize, 1, num=bluriter):
+            if not fix_blursize:
+                bg_img = cv2.medianBlur(bg_img, blursize, int(ksize)+(1+int(ksize)%2))
+            else:
+                bg_img = cv2.medianBlur(bg_img, blursize, blursize)
 
         if verbose:
             cv2.imwrite(f"Filtered_{idx}.jpg", bg_img)
@@ -56,7 +69,7 @@ def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg
 
         # Normalize bg to preserve more colorinformation
         if bg_norm:
-            bg_img = cv2.normalize(bg_img, None, alpha=bg_norm_min, beta=bg_norm_max, norm_type=cv2.NORM_MINMAX,                                    dtype=cv2.CV_8U)
+            bg_img = cv2.normalize(bg_img, None, alpha=bg_norm_min, beta=bg_norm_max, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
  
         # Subtract bg from fg
         diff_img = 255 - cv2.absdiff(plane, bg_img)
@@ -77,7 +90,10 @@ def main():
         print(fout)
         if not fout.parent.exists():
             fout.parent.mkdir()
-        bg_sub = background_subtractor(img,dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape, bg_norm=args.bg_normalize, bg_norm_min=args.bg_norm_min, bg_norm_max=args.bg_norm_max, textdilation=args.textdilation, contrast=args.contrast, verbose=args.verbose)
+        bg_sub = background_subtractor(img,dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape,
+                                       bg_norm=args.bg_normalize, bg_norm_min=args.bg_norm_min, bg_norm_max=args.bg_norm_max,
+                                       bluriter=args.bluriter, fix_blursize=args.fix_blursize, textdilation=args.textdilation,
+                                       contrast=args.contrast, verbose=args.verbose)
         if args.extension == "jpg":
             cv2.imwrite(str(fout.absolute()), bg_sub, [int(cv2.IMWRITE_JPEG_QUALITY), args.quality])
         else:
