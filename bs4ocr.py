@@ -58,9 +58,9 @@ def background_subtractor(img, dilsize=5, blursize=59, kernelshape="ellipse", bg
 
         for ksize in np.linspace(blursize, 1, num=bluriter):
             if not fix_blursize:
-                bg_img = cv2.medianBlur(bg_img, blursize, int(ksize) + (1 + int(ksize) % 2))
+                bg_img = cv2.medianBlur(bg_img, int(ksize) + (1 + int(ksize) % 2))
             else:
-                bg_img = cv2.medianBlur(bg_img, blursize, blursize)
+                bg_img = cv2.medianBlur(bg_img, blursize)
 
         if verbose:
             cv2.imwrite(f"Filtered_{idx}.jpg", bg_img)
