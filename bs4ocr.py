@@ -10,7 +10,8 @@ import numpy as np
 
 # Command line arguments.
 arg_parser = argparse.ArgumentParser(description='Subtract background for better OCR results.')
-arg_parser.add_argument("function", type=str, help="filename of text file or path to files", choices=['normalize','subtract'])
+arg_parser.add_argument("function", type=str, help="filename of text file or path to files",
+                        choices=['normalize', 'subtract'])
 arg_parser.add_argument("fname", type=lambda x: Path(x), help="filename of text file or path to files", nargs='*')
 arg_parser.add_argument("-o", "--outputfolder", default="./cleaned", help="filename of the output")
 arg_parser.add_argument("-e", "--extension", default="jpg", help="Extension of the img")
@@ -36,10 +37,12 @@ arg_parser.add_argument("-v", "--verbose", help="show ignored files", action="st
 
 args = arg_parser.parse_args()
 
+
 # -i 4 -b 150 -d 10  good settings atm for 300 dpi
-def subtractor(img, dilsize=15, blursize=59, kernelshape="ellipse", normalize=False, norm_min=20,
-                          norm_max=235, norm_auto=False, bluriter=1, fix_blursize=False, blurfilter="Gaussian", textdilation=True, contrast=False,
-                          verbose=False):
+def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: str = "ellipse",
+               normalize: bool = False, norm_min: int = 0, norm_max: int = 255, norm_auto: bool = False,
+               bluriter: int = 1, fix_blursize: bool = False, blurfilter: str = "Gaussian",
+               textdilation: bool = True, contrast: bool = False, verbose: bool = False):
     # Dilsize increasing makes scooping effects,
     # default (img, dilsize=19, blursize=21, contrast=0)
     img = cv2.imread(str(img), -1)
@@ -61,7 +64,7 @@ def subtractor(img, dilsize=15, blursize=59, kernelshape="ellipse", normalize=Fa
         if textdilation:
             dil_kernel = cv2.getStructuringElement(kshape, (int(dilsize / 2), dilsize))
             dilated_img = cv2.dilate(plane, dil_kernel, iterations=3)
-            dil_kernel = cv2.getStructuringElement(kshape, (int(dilsize/2)+1, dilsize+1))
+            dil_kernel = cv2.getStructuringElement(kshape, (int(dilsize / 2) + 1, dilsize + 1))
             dilated_img = cv2.erode(dilated_img, dil_kernel, iterations=1)
         else:
             dil_kernel = cv2.getStructuringElement(kshape, (dilsize, dilsize))
@@ -81,7 +84,6 @@ def subtractor(img, dilsize=15, blursize=59, kernelshape="ellipse", normalize=Fa
                 else:
                     bg_img = cv2.medianBlur(bg_img, blursize)
 
-
         if verbose:
             cv2.imwrite(f"Filtered_{idx}.jpg", bg_img)
             cv2.imwrite(f"Dilate_{idx}.jpg", dilated_img)
@@ -93,9 +95,9 @@ def subtractor(img, dilsize=15, blursize=59, kernelshape="ellipse", normalize=Fa
         # Increases the contrast
         if contrast:
             if contrast:
-                diff_img = cv2.add(norm_img,plane*contrast, dtype=cv2.CV_8U)
+                diff_img = cv2.add(norm_img, plane * contrast, dtype=cv2.CV_8U)
             else:
-                diff_img = cv2.subtract(diff_img,plane*contrast, dtype=cv2.CV_8U)
+                diff_img = cv2.subtract(diff_img, plane * contrast, dtype=cv2.CV_8U)
             # Normalize the final image to the range 0-255
             norm_img = cv2.normalize(diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
@@ -103,7 +105,8 @@ def subtractor(img, dilsize=15, blursize=59, kernelshape="ellipse", normalize=Fa
 
     return cv2.merge(result_planes)
 
-def normalizer(img, bg_min, bg_max, auto):
+
+def normalizer(img: Path, bg_min: int, bg_max: int, auto: bool):
     img = cv2.imread(str(img), -1)
     rgb_planes = cv2.split(img)
     result_planes = []
@@ -122,27 +125,36 @@ def normalizer(img, bg_min, bg_max, auto):
 
     return cv2.merge(result_planes)
 
+
 def main():
     # Set filenames or path
     if len(args.fname) == 1 and not args.fname[0].is_file():
         args.fname = list(Path(args.fname[0]).rglob(f"*.{args.extension}"))
     for img in args.fname:
-        print(img + " in process!")
+        print(img.name + " in process!")
+        try:
+            # Try to get dpi information
+            from PIL import Image
+            dpi = Image.open(img).info['dpi']
+            args.dpi = np.mean(dpi, dtype=int)
+            print("DPI was set to:", args.dpi)
+        except:
+            pass
         if args.function == 'subtract':
             resimg = subtractor(img, dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape,
-                                       normalize=args.normalize, norm_min=args.normalize_min,
-                                       norm_max=args.normalize_max, norm_auto=args.normalize_auto,
-                                       bluriter=args.bluriter, fix_blursize=args.fixblursize,
-                                       textdilation=args.textdilation,
-                                       contrast=args.contrast, verbose=args.verbose)
+                                normalize=args.normalize, norm_min=args.normalize_min,
+                                norm_max=args.normalize_max, norm_auto=args.normalize_auto,
+                                bluriter=args.bluriter, fix_blursize=args.fixblursize,
+                                textdilation=args.textdilation,
+                                contrast=args.contrast, verbose=args.verbose)
         else:
             resimg = normalizer(img, args.normalize_min, args.normalize_max, args.normalize_auto)
-        if args.binarzie:
+        if args.binarize:
             DPI = args.dpi + 1 if args.dpi % 2 == 0 else args.dpi
             resimg = cv2.adaptiveThreshold(cv2.cvtColor(resimg, cv2.COLOR_BGR2GRAY), 255,
                                            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
-                                           cv2.THRESH_BINARY, DPI, int(DPI/15))
-            args.extensionaddon = args.extensionaddon+".bin"
+                                           cv2.THRESH_BINARY, DPI, int(DPI / 15))
+            args.extensionaddon = args.extensionaddon + ".bin"
         fout = Path(args.outputfolder).absolute().joinpath(
             img.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")
         if not fout.parent.exists():
@@ -152,6 +164,7 @@ def main():
         else:
             cv2.imwrite(str(fout.absolute()), resimg)
         print(fout + " created!")
+
 
 if __name__ == "__main__":
     main()
