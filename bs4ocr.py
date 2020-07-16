@@ -10,8 +10,6 @@ import numpy as np
 
 # Command line arguments.
 arg_parser = argparse.ArgumentParser(description='Subtract background for better OCR results.')
-arg_parser.add_argument("function", type=str, help="filename of text file or path to files",
-                        choices=['normalize', 'subtract'])
 arg_parser.add_argument("fname", type=lambda x: Path(x), help="filename of text file or path to files", nargs='*')
 arg_parser.add_argument("-o", "--outputfolder", default="./cleaned", help="filename of the output")
 arg_parser.add_argument("-e", "--extension", default="jpg", help="Extension of the img")
@@ -26,9 +24,13 @@ arg_parser.add_argument("-s", "--kernelshape", default="ellipse", type=str, help
                         choices=["cross", "ellipse", "rect"])
 arg_parser.add_argument("-c", "--contrast", default=0.0, type=float, help="Higher contrast (experimental)")
 arg_parser.add_argument("-n", "--normalize", action="store_true", help="Higher contrast (experimental)")
+arg_parser.add_argument("--normalize-only", action="store_true", help="Normalizes the image but doesnt subtract")
 arg_parser.add_argument("--normalize_auto", action="store_true", help="Auto-Normalization (experimental)")
 arg_parser.add_argument("--normalize_min", default=0, type=int, help="Min value for background normalization")
 arg_parser.add_argument("--normalize_max", default=255, type=int, help="Max value for background normalization")
+arg_parser.add_argument("--scale_channel", default="None", type=str, help="Shape of the kernel for dilation",
+                        choices=["None","red","green","blue","cyan","magenta","yellow"])
+arg_parser.add_argument("--scale_channel_value", default=0.0, type=float, help="Scale value")
 arg_parser.add_argument("--binarize", action="store_true", help="Use Adaptive-Otsu-Binarization")
 arg_parser.add_argument("--dpi", default=300, type=int, help="Dots per inch (This value is used for binarization)")
 arg_parser.add_argument("-t", "--textdilation", action="store_false", help="Deactivate extra dilation for text")
@@ -36,6 +38,11 @@ arg_parser.add_argument("-q", "--quality", default=100, help="Compress quality o
 arg_parser.add_argument("-v", "--verbose", help="show ignored files", action="store_true")
 
 args = arg_parser.parse_args()
+
+def channelscaler(channel, value):
+    channel = cv2.multiply(channel, value)
+    channel = np.where(channel < 255, 255, channel)
+    return channel
 
 
 # -i 4 -b 150 -d 10  good settings atm for 300 dpi
@@ -61,12 +68,21 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
     :param verbose:
     :return:
     """
-    # Dilsize increasing makes scooping effects,
-    # default (img, dilsize=19, blursize=21, contrast=0)
-    img = cv2.imread(str(img), -1)
     # Background normalizer
     if normalize:
         img = normalizer(img, norm_min, norm_max, norm_auto)
+    else:
+        img = cv2.imread(str(img), -1)
+
+    # Channel scaler
+    if scale_channel != 'None' and len(img.shape) > 2:
+        if scale_channel in ['red', 'yellow', 'magenta']:
+            img[:, :, 0] = channelscaler(img[:, :, 0], scale_channel_value)
+        if scale_channel in ['green', 'yellow', 'cyan']:
+            img[:, :, 1] = channelscaler(img[:, :, 1], scale_channel_value)
+        if scale_channel in ['blue', 'magenta', 'cyan']:
+            img[:, :, 2] = channelscaler(img[:, :, 2], scale_channel_value)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     rgb_planes = cv2.split(img)
     result_planes = []
@@ -139,8 +155,8 @@ def normalizer(img: Path, bg_min: int, bg_max: int, auto: bool):
 
     for idx, plane in enumerate(rgb_planes[:3]):
         if auto:
-            auto_min = np.min(bg_min <= 25, 255)
-            auto_max = np.max(bg_min <= 220, 0)
+            auto_min = np.min(np.where((bg_min <= 25, 255)))
+            auto_max = np.max(np.where((bg_min <= 220, 0)))
             plane = np.where(plane <= auto_min, auto_min, plane)
             plane = np.where(plane >= auto_max, auto_max, plane)
         else:
@@ -166,21 +182,35 @@ def main():
             print("DPI was set to:", args.dpi)
         except:
             pass
-        if args.function == 'subtract':
+        # Channel scaler
+        if args.scale_channel != 'None' and len(img.shape) > 2:
+            if scale_channel in ['red', 'yellow', 'magenta']:
+                img[:, :, 0] = channelscaler(img[:, :, 0], scale_channel_value)
+            if scale_channel in ['green', 'yellow', 'cyan']:
+                img[:, :, 1] = channelscaler(img[:, :, 1], scale_channel_value)
+            if scale_channel in ['blue', 'magenta', 'cyan']:
+                img[:, :, 2] = channelscaler(img[:, :, 2], scale_channel_value)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Background normalizer
+        if args.normalize or args.normalize_only:
+            img = normalizer(img, norm_min, norm_max, norm_auto)
+        # Background subtractor
+        if not args.normalize_only:
             resimg = subtractor(img, dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape,
                                 normalize=args.normalize, norm_min=args.normalize_min,
                                 norm_max=args.normalize_max, norm_auto=args.normalize_auto,
                                 bluriter=args.bluriter, fix_blursize=args.fixblursize,
                                 textdilation=args.textdilation,
                                 contrast=args.contrast, verbose=args.verbose)
-        else:
-            resimg = normalizer(img, args.normalize_min, args.normalize_max, args.normalize_auto)
+        # Image binarizer
         if args.binarize:
             DPI = args.dpi + 1 if args.dpi % 2 == 0 else args.dpi
-            resimg = cv2.adaptiveThreshold(cv2.cvtColor(resimg, cv2.COLOR_BGR2GRAY), 255,
+            resimg = resimg if len(resimg.shape) == 2 else cv2.cvtColor(resimg, cv2.COLOR_BGR2GRAY)
+            resimg = cv2.adaptiveThreshold(resimg, 255,
                                            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, \
-                                           cv2.THRESH_BINARY, DPI, int(DPI / 15))
+                                           cv2.THRESH_BINARY, DPI, int(DPI / 12))
             args.extensionaddon = args.extensionaddon + ".bin"
+        # Output
         fout = Path(args.outputfolder).absolute().joinpath(
             img.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")
         if not fout.parent.exists():
@@ -189,7 +219,7 @@ def main():
             cv2.imwrite(str(fout.absolute()), resimg, [int(cv2.IMWRITE_JPEG_QUALITY), args.quality])
         else:
             cv2.imwrite(str(fout.absolute()), resimg)
-        print(fout + " created!")
+        print(str(fout) + " created!")
 
 
 if __name__ == "__main__":
