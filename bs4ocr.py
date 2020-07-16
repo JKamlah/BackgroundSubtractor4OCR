@@ -29,7 +29,7 @@ arg_parser.add_argument("--normalize_auto", action="store_true", help="Auto-Norm
 arg_parser.add_argument("--normalize_min", default=0, type=int, help="Min value for background normalization")
 arg_parser.add_argument("--normalize_max", default=255, type=int, help="Max value for background normalization")
 arg_parser.add_argument("--scale_channel", default="None", type=str, help="Shape of the kernel for dilation",
-                        choices=["None","red","green","blue","cyan","magenta","yellow"])
+                        choices=["None", "red", "green", "blue", "cyan", "magenta", "yellow"])
 arg_parser.add_argument("--scale_channel_value", default=0.0, type=float, help="Scale value")
 arg_parser.add_argument("--binarize", action="store_true", help="Use Adaptive-Otsu-Binarization")
 arg_parser.add_argument("--dpi", default=300, type=int, help="Dots per inch (This value is used for binarization)")
@@ -46,8 +46,7 @@ def channelscaler(channel, value):
 
 
 # -i 4 -b 150 -d 10  good settings atm for 300 dpi
-def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: str = "ellipse",
-               normalize: bool = False, norm_min: int = 0, norm_max: int = 255, norm_auto: bool = False,
+def subtractor(img, dilsize: int = 15, blursize: int = 59, kernelshape: str = "ellipse",
                bluriter: int = 1, fix_blursize: bool = False, blurfilter: str = "Gaussian",
                textdilation: bool = True, contrast: bool = False, verbose: bool = False):
     """
@@ -68,22 +67,6 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
     :param verbose:
     :return:
     """
-    # Background normalizer
-    if normalize:
-        img = normalizer(img, norm_min, norm_max, norm_auto)
-    else:
-        img = cv2.imread(str(img), -1)
-
-    # Channel scaler
-    if scale_channel != 'None' and len(img.shape) > 2:
-        if scale_channel in ['red', 'yellow', 'magenta']:
-            img[:, :, 0] = channelscaler(img[:, :, 0], scale_channel_value)
-        if scale_channel in ['green', 'yellow', 'cyan']:
-            img[:, :, 1] = channelscaler(img[:, :, 1], scale_channel_value)
-        if scale_channel in ['blue', 'magenta', 'cyan']:
-            img[:, :, 2] = channelscaler(img[:, :, 2], scale_channel_value)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
     rgb_planes = cv2.split(img)
     result_planes = []
 
@@ -128,10 +111,7 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
 
         # Increases the contrast
         if contrast:
-            if contrast:
-                diff_img = cv2.add(norm_img, plane * contrast, dtype=cv2.CV_8U)
-            else:
-                diff_img = cv2.subtract(diff_img, plane * contrast, dtype=cv2.CV_8U)
+            diff_img = cv2.add(norm_img, plane * contrast, dtype=cv2.CV_8U)
             # Normalize the final image to the range 0-255
             norm_img = cv2.normalize(diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
 
@@ -140,28 +120,27 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
     return cv2.merge(result_planes)
 
 
-def normalizer(img: Path, bg_min: int, bg_max: int, auto: bool):
+def normalizer(img, norm_min: int = 0, norm_max: int = 255, norm_auto: bool = False):
     """
     Normalizes the histogram of the image
     :param img: path object of the image
-    :param bg_min: max min value
-    :param bg_max: min max value
+    :param norm_min: max min value
+    :param norm_max: min max value
     :param auto: auto normalizer
     :return:
     """
-    img = cv2.imread(str(img), -1)
     rgb_planes = cv2.split(img)
     result_planes = []
 
     for idx, plane in enumerate(rgb_planes[:3]):
-        if auto:
-            auto_min = np.min(np.where((bg_min <= 25, 255)))
-            auto_max = np.max(np.where((bg_min <= 220, 0)))
+        if norm_auto:
+            auto_min = np.min(np.where((norm_min <= 25, 255)))
+            auto_max = np.max(np.where((norm_min <= 220, 0)))
             plane = np.where(plane <= auto_min, auto_min, plane)
             plane = np.where(plane >= auto_max, auto_max, plane)
         else:
-            plane = np.where(plane <= bg_min, bg_min, plane)
-            plane = np.where(plane >= bg_max, bg_max, plane)
+            plane = np.where(plane <= norm_min, norm_min, plane)
+            plane = np.where(plane >= norm_max, norm_max, plane)
         norm_img = cv2.normalize(plane, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
         result_planes.append(norm_img)
 
@@ -172,36 +151,37 @@ def main():
     # Set filenames or path
     if len(args.fname) == 1 and not args.fname[0].is_file():
         args.fname = list(Path(args.fname[0]).rglob(f"*.{args.extension}"))
-    for img in args.fname:
-        print(img.name + " in process!")
+    for fname in args.fname:
+        print(fname.name + " in process!")
         try:
             # Try to get dpi information
             from PIL import Image
-            dpi = Image.open(img).info['dpi']
+            dpi = Image.open(fname).info['dpi']
             args.dpi = np.mean(dpi, dtype=int)
             print("DPI was set to:", args.dpi)
         except:
             pass
+
+        # Read image
+        img = cv2.imread(str(fname), -1)
+        resimg = img
         # Channel scaler
         if args.scale_channel != 'None' and len(img.shape) > 2:
-            if scale_channel in ['red', 'yellow', 'magenta']:
-                img[:, :, 0] = channelscaler(img[:, :, 0], scale_channel_value)
-            if scale_channel in ['green', 'yellow', 'cyan']:
-                img[:, :, 1] = channelscaler(img[:, :, 1], scale_channel_value)
-            if scale_channel in ['blue', 'magenta', 'cyan']:
-                img[:, :, 2] = channelscaler(img[:, :, 2], scale_channel_value)
+            if args.scale_channel in ['red', 'yellow', 'magenta']:
+                img[:, :, 0] = channelscaler(img[:, :, 0], args.scale_channel_value)
+            if args.scale_channel in ['green', 'yellow', 'cyan']:
+                img[:, :, 1] = channelscaler(img[:, :, 1], args.scale_channel_value)
+            if args.scale_channel in ['blue', 'magenta', 'cyan']:
+                img[:, :, 2] = channelscaler(img[:, :, 2], args.scale_channel_value)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # Background normalizer
         if args.normalize or args.normalize_only:
-            img = normalizer(img, norm_min, norm_max, norm_auto)
+            img = normalizer(img, args.normalize_min, args.normalize_max,  args.normalize_auto)
         # Background subtractor
         if not args.normalize_only:
             resimg = subtractor(img, dilsize=args.dilsize, blursize=args.blursize, kernelshape=args.kernelshape,
-                                normalize=args.normalize, norm_min=args.normalize_min,
-                                norm_max=args.normalize_max, norm_auto=args.normalize_auto,
                                 bluriter=args.bluriter, fix_blursize=args.fixblursize,
-                                textdilation=args.textdilation,
-                                contrast=args.contrast, verbose=args.verbose)
+                                textdilation=args.textdilation, contrast=args.contrast, verbose=args.verbose)
         # Image binarizer
         if args.binarize:
             DPI = args.dpi + 1 if args.dpi % 2 == 0 else args.dpi
@@ -212,7 +192,7 @@ def main():
             args.extensionaddon = args.extensionaddon + ".bin"
         # Output
         fout = Path(args.outputfolder).absolute().joinpath(
-            img.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")
+            fname.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")
         if not fout.parent.exists():
             fout.parent.mkdir()
         if args.extension == "jpg":
