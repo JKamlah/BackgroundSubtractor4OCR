@@ -43,6 +43,24 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
                normalize: bool = False, norm_min: int = 0, norm_max: int = 255, norm_auto: bool = False,
                bluriter: int = 1, fix_blursize: bool = False, blurfilter: str = "Gaussian",
                textdilation: bool = True, contrast: bool = False, verbose: bool = False):
+    """
+    The text in the image will be removed, the background smoothed and than extracted from the original image
+    :param img:
+    :param dilsize:
+    :param blursize:
+    :param kernelshape:
+    :param normalize:
+    :param norm_min:
+    :param norm_max:
+    :param norm_auto:
+    :param bluriter:
+    :param fix_blursize:
+    :param blurfilter:
+    :param textdilation:
+    :param contrast:
+    :param verbose:
+    :return:
+    """
     # Dilsize increasing makes scooping effects,
     # default (img, dilsize=19, blursize=21, contrast=0)
     img = cv2.imread(str(img), -1)
@@ -107,6 +125,14 @@ def subtractor(img: Path, dilsize: int = 15, blursize: int = 59, kernelshape: st
 
 
 def normalizer(img: Path, bg_min: int, bg_max: int, auto: bool):
+    """
+    Normalizes the histogram of the image
+    :param img: path object of the image
+    :param bg_min: max min value
+    :param bg_max: min max value
+    :param auto: auto normalizer
+    :return:
+    """
     img = cv2.imread(str(img), -1)
     rgb_planes = cv2.split(img)
     result_planes = []
@@ -114,7 +140,7 @@ def normalizer(img: Path, bg_min: int, bg_max: int, auto: bool):
     for idx, plane in enumerate(rgb_planes[:3]):
         if auto:
             auto_min = np.min(bg_min <= 25, 255)
-            auto_max = np.max(bg_min <= 225, 0)
+            auto_max = np.max(bg_min <= 220, 0)
             plane = np.where(plane <= auto_min, auto_min, plane)
             plane = np.where(plane >= auto_max, auto_max, plane)
         else:
