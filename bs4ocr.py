@@ -12,7 +12,8 @@ import numpy as np
 arg_parser = argparse.ArgumentParser(description='Subtract background for better OCR results.')
 arg_parser.add_argument("fname", type=lambda x: Path(x), help="filename of text file or path to files", nargs='*')
 arg_parser.add_argument("-o", "--outputfolder", default="./cleaned", help="filename of the output")
-arg_parser.add_argument("-e", "--extension", default="jpg", help="Extension of the img")
+arg_parser.add_argument("-e", "--extension", default="jpg", help="Extension of the img")i
+arg_parser.add_argument("-r", "--replace", action="store_true", help="Replace the original image")
 arg_parser.add_argument("--extensionaddon", default=".prep", help="Addon to the fileextension")
 arg_parser.add_argument("-b", "--blursize", default=59, type=int, help="Kernelsize for medianBlur")
 arg_parser.add_argument("-i", "--bluriter", default=1, type=int, help="Iteration of the medianBlur")
@@ -192,15 +193,16 @@ def main():
             args.extensionaddon = args.extensionaddon + ".bin"
         # Output
         fout = Path(args.outputfolder).absolute().joinpath(
-            fname.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")
+            fname.name.rsplit(".", 1)[0] + f"{args.extensionaddon}.{args.extension}")i
         if not fout.parent.exists():
             fout.parent.mkdir()
-        if args.extension == "jpg":
+        if args.replace:
+            cv2.imwrite(str(fname.resolve()), resimg)
+        elif args.extension == "jpg":
             cv2.imwrite(str(fout.absolute()), resimg, [int(cv2.IMWRITE_JPEG_QUALITY), args.quality])
         else:
             cv2.imwrite(str(fout.absolute()), resimg)
         print(str(fout) + " created!")
-
 
 if __name__ == "__main__":
     main()
